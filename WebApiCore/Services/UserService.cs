@@ -4,12 +4,23 @@ using System.Linq;
 using WebApiCore.Entities;
 using WebApiCore.DbContexts;
 using WebApiCore.Helpers;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using System;
+using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
+using System.Security.Claims;
+using System.Text;
+using WebApiCore.Entities;
+using WebApiCore.Helpers;
+using WebApiCore.Models;
 
 namespace WebApiCore.Services
 {
     public interface IUserService
     {
-        User Authenticate(string username, string password);
+        AuthenticateResponse Authenticate(AuthenticateRequest model);
         IEnumerable<User> GetAll();
         User GetById(int id);
         User Create(User user, string password);
@@ -20,29 +31,33 @@ namespace WebApiCore.Services
     public class UserService : IUserService
     {
         private UserContext _context;
+        private readonly AppSettings _appSettings;
 
-        public UserService(UserContext context)
+        public UserService(UserContext context, IOptions<AppSettings> appSettings)
         {
             _context = context;
+            _appSettings = appSettings.Value;
         }
 
-        public User Authenticate(string username, string password)
+        public AuthenticateResponse Authenticate(AuthenticateRequest model)
         {
-            if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+            if (string.IsNullOrEmpty(model.Username) || string.IsNullOrEmpty(model.Password))
                 return null;
 
-            var user = _context.Users.SingleOrDefault(x => x.UserName == username);
+            var user = _context.Users.SingleOrDefault(x => x.Username == model.Username);
 
             // check if username exists
             if (user == null)
                 return null;
 
             // check if password is correct
-            if (!VerifyPasswordHash(password, user.PasswordHash, user.PasswordSalt))
+            if (!VerifyPasswordHash(model.Password, user.PasswordHash, user.PasswordSalt))
                 return null;
 
-            // authentication successful
-            return user;
+            // authentication successful so generate jwt token
+            var token = generateJwtToken(user);
+
+            return new AuthenticateResponse(user, token);
         }
 
         public IEnumerable<User> GetAll()
@@ -52,17 +67,18 @@ namespace WebApiCore.Services
 
         public User GetById(int id)
         {
-            return _context.Users.Find(id);
+            return _context.Users.FirstOrDefault(x => x.Id == id);
         }
 
+        // helper methods
         public User Create(User user, string password)
         {
             // validation
             if (string.IsNullOrWhiteSpace(password))
                 throw new AppException("Password is required");
 
-            if (_context.Users.Any(x => x.UserName == user.UserName))
-                throw new AppException("Username \"" + user.UserName + "\" is already taken");
+            if (_context.Users.Any(x => x.Username == user.Username))
+                throw new AppException("Username \"" + user.Username + "\" is already taken");
 
             byte[] passwordHash, passwordSalt;
             CreatePasswordHash(password, out passwordHash, out passwordSalt);
@@ -83,17 +99,17 @@ namespace WebApiCore.Services
             if (user == null)
                 throw new AppException("User not found");
 
-            if (userParam.UserName != user.UserName)
+            if (userParam.Username != user.Username)
             {
                 // username has changed so check if the new username is already taken
-                if (_context.Users.Any(x => x.UserName == userParam.UserName))
-                    throw new AppException("Username " + userParam.UserName + " is already taken");
+                if (_context.Users.Any(x => x.Username == userParam.Username))
+                    throw new AppException("Username " + userParam.Username + " is already taken");
             }
 
             // update user properties
             user.FirstName = userParam.FirstName;
             user.LastName = userParam.LastName;
-            user.UserName = userParam.UserName;
+            user.Username = userParam.Username;
 
             // update password if it was entered
             if (!string.IsNullOrWhiteSpace(password))
@@ -119,7 +135,20 @@ namespace WebApiCore.Services
             }
         }
 
-        // private helper methods
+        private string generateJwtToken(User user)
+        {
+            // generate token that is valid for 7 days
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var key = Encoding.ASCII.GetBytes(_appSettings.Secret);
+            var tokenDescriptor = new SecurityTokenDescriptor
+            {
+                Subject = new ClaimsIdentity(new[] { new Claim("id", user.Id.ToString()) }),
+                Expires = DateTime.UtcNow.AddDays(7),
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+            };
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+            return tokenHandler.WriteToken(token);
+        }
 
         private static void CreatePasswordHash(string password, out byte[] passwordHash, out byte[] passwordSalt)
         {

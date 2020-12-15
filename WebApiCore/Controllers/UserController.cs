@@ -18,64 +18,30 @@ using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using WebApiCore.Helpers;
 
-// For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
-
 namespace WebApiCore.Controllers
 {
-    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
+    public abstract class BaseController : ControllerBase
+    {
+        protected User GetCurrentUser()
+        {
+            var currentUser = (User)HttpContext.Items["User"];
+            return currentUser;
+        }
+    }
+
     [ApiController]
     [Route("[controller]")]
-    public class UsersController : ControllerBase
+    public class UsersController : BaseController
     {
         private IUserService _userService;
         private IMapper _mapper;
-        private readonly AppSettings _appSettings;
 
-        public UsersController(
-            IUserService userService,
-            IMapper mapper,
-            IOptions<AppSettings> appSettings)
+        public UsersController(IUserService userService, IMapper mapper)
         {
-            _userService = userService;
             _mapper = mapper;
-            _appSettings = appSettings.Value;
+            _userService = userService;
         }
 
-        [AllowAnonymous]
-        [HttpPost("authenticate")]
-        public IActionResult Authenticate([FromBody] UserModel UserModel)
-        {
-            var user = _userService.Authenticate(UserModel.UserName, UserModel.Password);
-
-            if (user == null)
-                return BadRequest(new { message = "Username or password is incorrect" });
-
-            var tokenHandler = new JwtSecurityTokenHandler();
-            var key = Encoding.ASCII.GetBytes(_appSettings.Secret);
-            var tokenDescriptor = new SecurityTokenDescriptor
-            {
-                Subject = new ClaimsIdentity(new Claim[]
-                {
-                    new Claim(ClaimTypes.Name, user.Id.ToString())
-                }),
-                Expires = DateTime.UtcNow.AddDays(7),
-                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
-            };
-            var token = tokenHandler.CreateToken(tokenDescriptor);
-            var tokenString = tokenHandler.WriteToken(token);
-
-            // return basic user info (without password) and token to store client side
-            return Ok(new
-            {
-                Id = user.Id,
-                Username = user.UserName,
-                FirstName = user.FirstName,
-                LastName = user.LastName,
-                Token = tokenString
-            });
-        }
-
-        [AllowAnonymous]
         [HttpPost("register")]
         public IActionResult Register([FromBody] UserModel UserModel)
         {
@@ -95,20 +61,24 @@ namespace WebApiCore.Controllers
             }
         }
 
+        [HttpPost("authenticate")]
+        public IActionResult Authenticate(AuthenticateRequest model)
+        {
+            var response = _userService.Authenticate(model);
+
+            if (response == null)
+                return BadRequest(new { message = "Username or password is incorrect" });
+
+            return Ok(response);
+        }
+
+        [Authorize]
         [HttpGet]
         public IActionResult GetAll()
         {
+            var currentUser = GetCurrentUser();
             var users = _userService.GetAll();
-            var UserModels = _mapper.Map<IList<UserModel>>(users);
-            return Ok(UserModels);
-        }
-
-        [HttpGet("{id}")]
-        public IActionResult GetById(int id)
-        {
-            var user = _userService.GetById(id);
-            var UserModel = _mapper.Map<UserModel>(user);
-            return Ok(UserModel);
+            return Ok(users);
         }
 
         [HttpPut("{id}")]
@@ -116,7 +86,7 @@ namespace WebApiCore.Controllers
         {
             // map dto to entity and set id
             var user = _mapper.Map<User>(UserModel);
-            user.Id = id.ToString();
+            user.Id = id;
 
             try
             {
