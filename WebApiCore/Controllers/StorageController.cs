@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using OnnxObjectDetection;
@@ -32,6 +33,64 @@ namespace WebApiCore.Controllers
             _storageService = storageService;
             _objectDetectionService = objectDetectionService;
             _hostingEnvironment = hostingEnvironment;
+        }
+        [HttpGet("apk")]
+        public async Task<IActionResult> DownLoadStaticFile()
+        {
+
+            string file = @"E:/ObjectDetection/ObjectDetection/ObjectDetection/ObjectDetection.Android/bin/Release/com.companyname.objectdetection-Signed.apk";
+            FileInfo fileInfo = new FileInfo(file);
+            Console.WriteLine(fileInfo.FullName);
+            if (fileInfo.Exists)
+            {
+                MemoryStream stream = new MemoryStream();
+                var filestream = fileInfo.OpenRead();
+                await filestream.CopyToAsync(stream);
+                stream.Position = 0;
+                filestream.Close();
+                this.Response.ContentLength = stream.Length;
+                this.Response.Headers.TryAdd("Accept-Ranges", "bytes");
+                this.Response.Headers.TryAdd("Content-Range", "bytes 0-" + stream.Length);
+                return File(stream, "application/octet-stream", Path.GetFileName(file));
+            }
+            else
+            {
+                return BadRequest();
+            }
+        }
+
+        [HttpPost("ana")]
+        [DisableRequestSizeLimit]
+        public async Task<IActionResult> AnalyseFile([FromForm] IFormFile file)
+        {
+            if (file.Length > 0)
+            {
+                Console.WriteLine(file.FileName);
+                MemoryStream imageMemoryStream = new MemoryStream();
+                await file.CopyToAsync(imageMemoryStream);
+
+                Image image = Image.FromStream(imageMemoryStream);
+
+                //Convert to Bitmap
+                Bitmap bitmapImage = (Bitmap)image;
+
+                _logger.LogInformation($"Start processing image...");
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                ImageInputData imageInputData = new ImageInputData { Image = bitmapImage };
+                var imgbyte = DetectAndPaintImage(imageInputData, image);
+                watch.Stop();
+                var elapsedMs = watch.ElapsedMilliseconds;
+                _logger.LogInformation($"Image processed in {elapsedMs} miliseconds");
+                imageMemoryStream.Close();
+
+                Stream mem = new MemoryStream(imgbyte);
+                mem.Position = 0;
+                return File(mem, "application/octet-stream", Path.GetFileName(file.FileName));
+            }
+            else
+            {
+                return BadRequest();
+            }
         }
 
         //Example from https://dottutorials.net/dotnet-core-web-api-multipart-form-data-upload-file/

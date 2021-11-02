@@ -30,7 +30,6 @@
   <ItemGroup>
     <Folder Include="StaticFiles\Images\" />
     <Folder Include="MLNet\" />
-    <Folder Include="LiteDB\" />
     <Folder Include="ML\" />
   </ItemGroup>
 

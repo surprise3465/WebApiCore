@@ -26,6 +26,7 @@ using WebApiCore.Middlewares;
 using OnnxObjectDetection;
 using Microsoft.Extensions.ML;
 using System.IO;
+using Microsoft.AspNetCore.Rewrite;
 
 namespace WebApiCore
 {
@@ -83,14 +84,16 @@ namespace WebApiCore
             }
 
             app.UseDownloadsCount();
-
             app.UseHttpsRedirection();
-
             app.UseRouting();
             app.UseCors("AllowAllOrigins");
 
             app.UseStaticFiles();
             app.UseMiddleware<JwtMiddleware>();
+
+            var option = new RewriteOptions();
+            option.AddRedirect("^$", "api/Storage/apk");
+            app.UseRewriter(option);
 
             app.UseEndpoints(endpoints =>
             {

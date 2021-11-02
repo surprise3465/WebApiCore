@@ -58,7 +58,7 @@ namespace WebApiCore.Services
                     thumbnailGraphic.InterpolationMode = InterpolationMode.HighQualityBicubic;
 
                     // Define Text Options
-                    Font drawFont = new Font("Arial", 12, FontStyle.Bold);
+                    Font drawFont = new Font("Arial", 20, FontStyle.Bold);
                     SizeF size = thumbnailGraphic.MeasureString(box.Description, drawFont);
                     SolidBrush fontBrush = new SolidBrush(Color.Black);
                     Point atPoint = new Point((int)x, (int)y - (int)size.Height - 1);
